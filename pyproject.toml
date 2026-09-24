@@ -1,0 +1,39 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "nanobind>=2.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "pmsim"
+version = "0.0.1"
+description = "Backtesting and research for prediction markets"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = [
+  "numpy",
+  "pyarrow",
+  "duckdb",
+  "typer",
+  "matplotlib",
+  "jinja2",
+]
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[tool.scikit-build]
+wheel.packages = ["python/pmsim"]
+cmake.build-type = "Release"
+build-dir = "build/py/{wheel_tag}"
+
+[tool.scikit-build.cmake.define]
+PMSIM_BUILD_PYTHON = "ON"
+PMSIM_BUILD_TESTS = "OFF"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["python"]
