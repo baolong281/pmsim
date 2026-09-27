@@ -1,4 +1,5 @@
 #pragma once
+#include "collector/NetworkStats.hpp"
 #include "collector/Session.hpp"
 #include <algorithm>
 #include <boost/asio/co_spawn.hpp>
@@ -15,8 +16,9 @@ struct ManagerConfig {
 template <typename Q> class Manager {
 public:
   Manager(Discovery &discovery, Q &queue, net::any_io_executor exec,
-          ssl::context &ctx, ManagerConfig cfg)
-      : discovery{discovery}, queue{queue}, exec{exec}, ctx{ctx}, cfg{cfg} {}
+          ssl::context &ctx, ManagerConfig cfg, NetworkStats &net_stats)
+      : discovery{discovery}, queue{queue}, exec{exec}, ctx{ctx}, cfg{cfg},
+        net_stats{net_stats} {}
 
   net::awaitable<void> start() {
     auto markets = co_await discovery.fetch();
@@ -37,8 +39,9 @@ public:
       }
 
       SessionConfig session_cfg{ws_config, markets_for_session};
-      auto sesh_ptr = std::make_unique<Session<Q>>(
-          exec, ctx, session_cfg, auth, queue, static_cast<uint32_t>(i));
+      auto sesh_ptr =
+          std::make_unique<Session<Q>>(exec, ctx, session_cfg, auth, queue,
+                                       static_cast<uint32_t>(i), net_stats);
       sessions.push_back(std::move(sesh_ptr));
     }
 
@@ -68,4 +71,5 @@ private:
   ssl::context &ctx;
   ManagerConfig cfg;
   std::vector<std::unique_ptr<Session<Q>>> sessions;
+  NetworkStats &net_stats;
 };

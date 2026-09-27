@@ -1,5 +1,6 @@
 #pragma once
 
+#include "collector/NetworkStats.hpp"
 #include "spdlog/spdlog.h"
 #include <collector/Auth.hpp>
 #include <collector/WSClient.hpp>
@@ -23,9 +24,9 @@ struct RawRecord {
 template <typename Q> class Session {
 public:
   Session(net::any_io_executor exec, ssl::context &ctx, SessionConfig cfg,
-          Auth &auth, Q &queue, uint32_t id)
+          Auth &auth, Q &queue, uint32_t id, NetworkStats &net_stats)
       : client{cfg.ws_config, exec, ctx}, cfg{cfg}, auth{auth}, queue{queue},
-        id{id} {}
+        id{id}, stats{net_stats.add_session(id)} {}
 
   Session(Session const &) = delete;
   Session &operator=(Session const &) = delete;
@@ -60,6 +61,8 @@ public:
         int64_t recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                               msg.recv_ts.time_since_epoch())
                               .count();
+        stats.inc_messages();
+        stats.inc_bytes_recv(msg.data.size());
         queue.push(RawRecord{id, attempt, seq++, recv_ns, std::move(msg.data)});
       }
     } catch (WSError const &) {
@@ -82,4 +85,5 @@ private:
   uint32_t id;
   uint64_t attempt{0};
   uint64_t seq{0};
+  SessionStats &stats;
 };

@@ -1,5 +1,7 @@
 #include "collector/Discovery.hpp"
 #include "collector/Manager.hpp"
+#include "collector/NetworkStats.hpp"
+#include "spdlog/common.h"
 #include <atomic>
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/signal_set.hpp>
@@ -34,11 +36,13 @@ int main(int argc, char **argv) {
   ctx.set_verify_mode(ssl::verify_peer);
 
   Queue queue{1 << 16};
-
   Discovery discovery{ioc.get_executor(), ctx, "gateway.polymarket.us", {}};
 
-  ManagerConfig cfg{10};
-  Manager<Queue> manager{discovery, queue, ioc.get_executor(), ctx, cfg};
+  NetworkStats net_stats{};
+
+  ManagerConfig cfg{100};
+  Manager<Queue> manager{discovery, queue, ioc.get_executor(),
+                         ctx,       cfg,   net_stats};
 
   Writer<Queue> writer{out_dir, "polymarket-us"};
 
@@ -71,4 +75,6 @@ int main(int argc, char **argv) {
 
   writer.stop();
   writer_thread.join();
+
+  spdlog::info("network stats={}", net_stats);
 }
