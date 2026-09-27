@@ -2,7 +2,6 @@
 #include "collector/Manager.hpp"
 #include "collector/NetworkStats.hpp"
 #include "spdlog/common.h"
-#include <atomic>
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/signal_set.hpp>
 #include <boost/lockfree/spsc_queue.hpp>
@@ -40,13 +39,20 @@ int main(int argc, char **argv) {
 
   NetworkStats net_stats{};
 
+  // any unrecoverable error (e.g. bad credentials) stops the whole collector
+  int exit_code = EXIT_SUCCESS;
+  auto fatal = [&](std::string const &) {
+    exit_code = EXIT_FAILURE;
+    ioc.stop();
+  };
+
   ManagerConfig cfg{100};
-  Manager<Queue> manager{discovery, queue, ioc.get_executor(),
-                         ctx,       cfg,   net_stats};
+  Manager<Queue> manager{discovery, queue,     ioc.get_executor(),
+                         ctx,       cfg,       net_stats,
+                         fatal};
 
   Writer<Queue> writer{out_dir, "polymarket-us"};
 
-  std::atomic<bool> running{true};
   std::thread writer_thread{[&] { writer.run(queue); }};
 
   // ctrl + c cleanup
@@ -63,11 +69,8 @@ int main(int argc, char **argv) {
     try {
       std::rethrow_exception(e);
     } catch (std::exception const &ex) {
-      spdlog::error("session crashd: {}", ex.what());
-      running.store(false);
-      signals.cancel();
-      manager.stop();
-      ioc.stop();
+      spdlog::error("manager crashed: {}", ex.what());
+      fatal(ex.what());
     }
   });
 
@@ -77,4 +80,5 @@ int main(int argc, char **argv) {
   writer_thread.join();
 
   spdlog::info("network stats={}", net_stats);
+  return exit_code;
 }

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <boost/asio/co_spawn.hpp>
 #include <collector/Discovery.hpp>
+#include <functional>
 #include <memory>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -16,9 +17,10 @@ struct ManagerConfig {
 template <typename Q> class Manager {
 public:
   Manager(Discovery &discovery, Q &queue, net::any_io_executor exec,
-          ssl::context &ctx, ManagerConfig cfg, NetworkStats &net_stats)
+          ssl::context &ctx, ManagerConfig cfg, NetworkStats &net_stats,
+          std::function<void(std::string const &)> on_fatal)
       : discovery{discovery}, queue{queue}, exec{exec}, ctx{ctx}, cfg{cfg},
-        net_stats{net_stats} {}
+        net_stats{net_stats}, on_fatal{std::move(on_fatal)} {}
 
   net::awaitable<void> start() {
     auto markets = co_await discovery.fetch();
@@ -46,13 +48,14 @@ public:
     }
 
     for (size_t i = 0; i < sessions.size(); i++) {
-      net::co_spawn(exec, sessions[i]->run(), [i](std::exception_ptr e) {
+      net::co_spawn(exec, sessions[i]->run(), [this, i](std::exception_ptr e) {
         if (!e)
           return;
         try {
           std::rethrow_exception(e);
         } catch (std::exception const &ex) {
           spdlog::error("session {} crashed: {}", i, ex.what());
+          on_fatal(ex.what());
         }
       });
     }
@@ -72,4 +75,5 @@ private:
   ManagerConfig cfg;
   std::vector<std::unique_ptr<Session<Q>>> sessions;
   NetworkStats &net_stats;
+  std::function<void(std::string const &)> on_fatal;
 };

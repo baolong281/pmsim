@@ -39,7 +39,13 @@ struct WSMessage {
 };
 
 struct WSError : std::runtime_error {
-  using std::runtime_error::runtime_error;
+  WSError(std::string what, beast::error_code ec = {}, unsigned http_status = 0)
+      : std::runtime_error(std::move(what)), code{ec},
+        http_status{http_status} {}
+
+  beast::error_code
+      code; // category + value: ssl, websocket::error::closed, timeout…
+  unsigned http_status; // non-zero only for a declined ws handshake (401, 429…)
 };
 
 enum class State { CONNECTING, OPEN, CLOSING, CLOSED };
@@ -75,7 +81,9 @@ public:
 
       if (!SSL_set_tlsext_host_name(ws.next_layer().native_handle(),
                                     cfg.host.c_str())) {
-        throw WSError("Failed to set SNI hostname!");
+        throw WSError("set SNI hostname",
+                      beast::error_code(static_cast<int>(::ERR_get_error()),
+                                        net::error::get_ssl_category()));
       }
 
       // call on ssl layer to do ssl handshake
@@ -111,7 +119,7 @@ public:
       if (res.result_int() != 0)
         what += " (HTTP " + std::to_string(res.result_int()) + " " +
                 std::string(res.reason()) + ": " + res.body() + ")";
-      throw WSError(what);
+      throw WSError(what, e.code(), res.result_int());
     } catch (...) {
       state = State::CLOSED;
       throw;
@@ -123,7 +131,7 @@ public:
       co_await ws.async_write(net::buffer(msg), net::use_awaitable);
     } catch (boost::system::system_error const &e) {
       state = State::CLOSED;
-      throw WSError("send: " + e.code().message());
+      throw WSError("send: " + e.code().message(), e.code());
     } catch (...) {
       state = State::CLOSED;
       throw;
@@ -140,7 +148,7 @@ public:
       co_return msg;
     } catch (boost::system::system_error const &e) {
       state = State::CLOSED;
-      throw WSError("read: " + e.code().message());
+      throw WSError("read: " + e.code().message(), e.code());
     } catch (...) {
       state = State::CLOSED;
       throw;
