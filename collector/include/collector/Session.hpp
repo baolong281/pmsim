@@ -1,7 +1,8 @@
+#pragma once
+
+#include "spdlog/spdlog.h"
 #include <collector/Auth.hpp>
 #include <collector/WSClient.hpp>
-#include <iostream>
-#include <sstream>
 #include <string>
 
 struct SessionConfig {
@@ -9,15 +10,28 @@ struct SessionConfig {
   std::vector<std::string> markets;
 };
 
-// manages the websocket connection and subscribes to markets
-class Session {
+struct RawRecord {
+  uint32_t session;
+  uint64_t attempt;
+  uint64_t seq;
+  int64_t recv_ns;
+  std::string data;
+};
 
+// manages the websocket connection and subscribes to markets
+
+template <typename Q> class Session {
 public:
   Session(net::any_io_executor exec, ssl::context &ctx, SessionConfig cfg,
-          Auth &auth)
-      : client{cfg.ws_config, exec, ctx}, cfg{cfg}, exec{exec}, auth{auth} {}
+          Auth &auth, Q &queue, uint32_t id)
+      : client{cfg.ws_config, exec, ctx}, cfg{cfg}, auth{auth}, queue{queue},
+        id{id} {}
 
   net::awaitable<void> run() {
+    ++attempt;
+    seq = 0;
+
+    running = true;
     co_await client.connect(auth.get_auth_headers(cfg.ws_config.path));
 
     std::string slugs;
@@ -31,17 +45,36 @@ public:
                       R"("SUBSCRIPTION_TYPE_MARKET_DATA","marketSlugs":[)" +
                       slugs + R"(]}})";
 
+    spdlog::info("session {} subscribing to: {}", id, slugs);
+
     co_await client.send(std::move(sub));
 
-    while (true) {
-      WSMessage msg = co_await client.read();
-      std::cout << msg.data << std::endl;
+    try {
+      while (running) {
+        WSMessage msg = co_await client.read();
+        int64_t recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                              msg.recv_ts.time_since_epoch())
+                              .count();
+        queue.push(RawRecord{id, attempt, seq++, recv_ns, std::move(msg.data)});
+      }
+    } catch (WSError const &) {
+      if (running)
+        throw;
     }
+  }
+
+  void stop() {
+    running = false;
+    client.cancel();
   }
 
 private:
   WSClient client;
   SessionConfig cfg;
-  net::any_io_executor exec;
   Auth &auth;
+  Q &queue;
+  bool running{false};
+  uint32_t id;
+  uint64_t attempt{0};
+  uint64_t seq{0};
 };

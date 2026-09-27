@@ -1,3 +1,5 @@
+#pragma once
+
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -55,6 +57,8 @@ public:
   net::awaitable<void> connect(std::vector<WSHeader> extra_headers) {
     state = State::CONNECTING;
     std::string_view step = "resolve";
+    // the server's reply to the ws handshake, so a decline can report why
+    websocket::response_type res;
 
     try {
       tcp::resolver resolver{ex};
@@ -99,11 +103,15 @@ public:
 
       // do the websocket handshake
       step = "ws handshake";
-      co_await ws.async_handshake(cfg.host, cfg.path, net::use_awaitable);
+      co_await ws.async_handshake(res, cfg.host, cfg.path, net::use_awaitable);
       state = State::OPEN;
     } catch (boost::system::system_error const &e) {
       state = State::CLOSED;
-      throw WSError(std::string(step) + ": " + e.code().message());
+      std::string what = std::string(step) + ": " + e.code().message();
+      if (res.result_int() != 0)
+        what += " (HTTP " + std::to_string(res.result_int()) + " " +
+                std::string(res.reason()) + ": " + res.body() + ")";
+      throw WSError(what);
     } catch (...) {
       state = State::CLOSED;
       throw;

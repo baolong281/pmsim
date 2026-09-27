@@ -8,15 +8,11 @@ FetchContent_Declare(simdjson
   URL https://github.com/simdjson/simdjson/archive/refs/tags/v3.10.1.tar.gz)
 FetchContent_MakeAvailable(simdjson)
 
-add_executable(pmsim-collector
-  src/main.cpp
-  src/config.cpp
-  src/discovery.cpp
-  src/ws_client.cpp
-  src/snapshots.cpp
-  src/writer.cpp
-  src/stats.cpp
-)
+FetchContent_Declare(spdlog
+  URL https://github.com/gabime/spdlog/archive/refs/tags/v1.17.0.tar.gz)
+FetchContent_MakeAvailable(spdlog)
+
+add_executable(pmsim-collector src/main.cpp)
 target_include_directories(pmsim-collector PRIVATE include)
 target_link_libraries(pmsim-collector PRIVATE
   pmsim_warnings
@@ -26,4 +22,5 @@ target_link_libraries(pmsim-collector PRIVATE
   Boost::headers
   PkgConfig::ZSTD
   simdjson::simdjson
+  spdlog::spdlog
 )
