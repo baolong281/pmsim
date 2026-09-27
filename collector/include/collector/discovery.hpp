@@ -1,6 +1,8 @@
 #pragma once
 
+#include "simdjson.h"
 #include "spdlog/spdlog.h"
+#include <arm_neon.h>
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -10,6 +12,7 @@
 #include <boost/beast/ssl.hpp>
 #include <boost/beast/websocket.hpp>
 #include <chrono>
+#include <spdlog/fmt/ranges.h>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -18,6 +21,7 @@ namespace beast = boost::beast; // from <boost/beast.hpp>
 namespace http = beast::http;
 namespace net = boost::asio; // from <boost/asio.hpp>
 namespace ssl = net::ssl;
+namespace json = simdjson;
 using tcp = boost::asio::ip::tcp;
 
 struct MarketFilter { //
@@ -28,7 +32,13 @@ struct MarketFilter { //
 struct MarketInfo {
   std::string slug;
   std::string category; /* status, gameStartTime… */
+  bool active;
 };
+
+inline std::string format_as(MarketInfo const &m) {
+  return fmt::format("{{slug={}, category={}, active={}}}", m.slug, m.category,
+                     m.active);
+}
 
 class Discovery {
 public:
@@ -36,9 +46,24 @@ public:
             MarketFilter filters)
       : exec{exec}, ctx{ctx}, host{host}, filters{filters} {}
 
-  net::awaitable<void> fetch() {
-    std::string res = co_await https_get("/v1/markets");
-    spdlog::info("{}", res);
+  net::awaitable<std::vector<MarketInfo>> fetch() {
+    std::string target = "/v1/markets?limit=1000&active=true&closed=false";
+    std::string body = co_await https_get(target);
+
+    json::padded_string json{body};
+
+    json::ondemand::parser parser;
+    json::ondemand::document obj = parser.iterate(json);
+
+    std::vector<MarketInfo> res;
+    for (auto e : obj.find_field("markets").get_array()) {
+      res.push_back({std::string(e["slug"].get_string().value()),
+                     std::string(e["category"].get_string().value()),
+                     e["active"].get_bool().value()});
+    }
+
+    spdlog::info("found markets: {}", res);
+    co_return res;
   }
 
 private:

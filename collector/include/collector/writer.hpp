@@ -26,9 +26,10 @@ public:
   Writer(Writer &&) = delete;
   Writer &operator=(Writer &&) = delete;
 
-  void run(Q &queue, std::atomic<bool> &running) {
+  void run(Q &queue) {
+    running = true;
     auto write_one = [this](RawRecord const &r) { write(r); };
-    while (running.load()) {
+    while (running) {
       auto n = queue.consume_all(write_one);
 
       // sleep when idle instead of spinning a core at 100%
@@ -42,9 +43,12 @@ public:
       fflush(file);
   }
 
+  void stop() { running = false; }
+
 private:
   static constexpr int64_t ns_per_hour = 3'600'000'000'000;
 
+  bool running{false};
   std::filesystem::path root;
   FILE *file{nullptr};
   int64_t hour{-1}; // hours since epoch of the open file

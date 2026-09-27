@@ -27,6 +27,11 @@ public:
       : client{cfg.ws_config, exec, ctx}, cfg{cfg}, auth{auth}, queue{queue},
         id{id} {}
 
+  Session(Session const &) = delete;
+  Session &operator=(Session const &) = delete;
+  Session(Session &&) = delete;
+  Session &operator=(Session &&) = delete;
+
   net::awaitable<void> run() {
     ++attempt;
     seq = 0;
