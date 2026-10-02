@@ -15,6 +15,7 @@
 #include <spdlog/fmt/ranges.h>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace beast = boost::beast; // from <boost/beast.hpp>
@@ -24,9 +25,9 @@ namespace ssl = net::ssl;
 namespace json = simdjson;
 using tcp = boost::asio::ip::tcp;
 
-struct MarketFilter { //
-  std::vector<std::string> categories, include_slugs, exclude_slugs,
-      slug_prefixes;
+// empty = every category
+struct MarketFilter {
+  std::vector<std::string> categories;
 };
 
 struct MarketInfo {
@@ -47,22 +48,42 @@ public:
       : exec{exec}, ctx{ctx}, host{host}, filters{filters} {}
 
   net::awaitable<std::vector<MarketInfo>> fetch() {
-    std::string target = "/v1/markets?limit=1000&active=true&closed=false";
-    std::string body = co_await https_get(target);
-
-    json::padded_string json{body};
-
-    json::ondemand::parser parser;
-    json::ondemand::document obj = parser.iterate(json);
+    // the gateway returns at most 500 markets per request, so page with
+    // offset until a short page comes back
+    constexpr size_t page_size = 500;
 
     std::vector<MarketInfo> res;
-    for (auto e : obj.find_field("markets").get_array()) {
-      res.push_back({std::string(e["slug"].get_string().value()),
+    // the list can shift while paging, so the same slug may appear twice
+    std::unordered_set<std::string> seen;
+    json::ondemand::parser parser;
+
+    for (size_t offset = 0;; offset += page_size) {
+      std::string target = "/v1/markets?limit=" + std::to_string(page_size) +
+                           "&offset=" + std::to_string(offset) +
+                           "&active=true&closed=false";
+      for (auto const &c : filters.categories)
+        target += "&categories=" + c;
+      std::string body = co_await https_get(target);
+
+      json::padded_string json{body};
+      json::ondemand::document obj = parser.iterate(json);
+
+      size_t n = 0;
+      for (auto e : obj.find_field("markets").get_array()) {
+        n++;
+        MarketInfo m{std::string(e["slug"].get_string().value()),
                      std::string(e["category"].get_string().value()),
-                     e["active"].get_bool().value()});
+                     e["active"].get_bool().value()};
+        if (seen.insert(m.slug).second)
+          res.push_back(std::move(m));
+      }
+
+      if (n < page_size)
+        break;
     }
 
-    spdlog::info("found markets: {}", res);
+    spdlog::info("discovery found {} markets", res.size());
+    spdlog::debug("found markets: {}", res);
     co_return res;
   }
 

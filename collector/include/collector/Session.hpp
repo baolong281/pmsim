@@ -69,8 +69,11 @@ public:
                   .count();
           stats.inc_messages();
           stats.inc_bytes_recv(msg.data.size());
-          queue.push(
-              RawRecord{id, attempt, seq++, recv_ns, std::move(msg.data)});
+          // push fails when the queue is full; the record is lost
+          if (!queue.push(RawRecord{id, attempt, seq++, recv_ns,
+                                    std::move(msg.data)}) &&
+              stats.inc_dropped() == 1)
+            spdlog::warn("session {} queue full, dropping records", id);
         }
       } catch (WSError const &err) {
         // bad credentials won't fix themselves, so don't retry

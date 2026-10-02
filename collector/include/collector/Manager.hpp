@@ -12,6 +12,7 @@
 
 struct ManagerConfig {
   size_t markets_per_session;
+  size_t max_markets;
 };
 
 template <typename Q> class Manager {
@@ -24,6 +25,11 @@ public:
 
   net::awaitable<void> start() {
     auto markets = co_await discovery.fetch();
+    if (markets.size() > cfg.max_markets) {
+      spdlog::warn("discovery found {} markets, capping at {}", markets.size(),
+                   cfg.max_markets);
+      markets.resize(cfg.max_markets);
+    }
     // round up so the last partial group still gets a session
     size_t n_sessions = (markets.size() + cfg.markets_per_session - 1) /
                         cfg.markets_per_session;

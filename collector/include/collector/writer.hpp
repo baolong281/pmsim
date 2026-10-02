@@ -48,7 +48,8 @@ public:
 private:
   static constexpr int64_t ns_per_hour = 3'600'000'000'000;
 
-  bool running{false};
+  // set by stop() on the main thread, read by run() on the writer thread
+  std::atomic<bool> running{false};
   std::filesystem::path root;
   FILE *file{nullptr};
   int64_t hour{-1}; // hours since epoch of the open file

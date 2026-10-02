@@ -35,7 +35,8 @@ int main(int argc, char **argv) {
   ctx.set_verify_mode(ssl::verify_peer);
 
   Queue queue{1 << 16};
-  Discovery discovery{ioc.get_executor(), ctx, "gateway.polymarket.us", {}};
+  Discovery discovery{
+      ioc.get_executor(), ctx, "gateway.polymarket.us", {{"politics"}}};
 
   NetworkStats net_stats{};
 
@@ -46,10 +47,9 @@ int main(int argc, char **argv) {
     ioc.stop();
   };
 
-  ManagerConfig cfg{100};
-  Manager<Queue> manager{discovery, queue,     ioc.get_executor(),
-                         ctx,       cfg,       net_stats,
-                         fatal};
+  ManagerConfig cfg{100, 500}; // 500 markets = 5 connections
+  Manager<Queue> manager{discovery, queue, ioc.get_executor(), ctx, cfg,
+                         net_stats, fatal};
 
   Writer<Queue> writer{out_dir, "polymarket-us"};
 
