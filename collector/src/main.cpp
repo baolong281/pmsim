@@ -47,7 +47,8 @@ int main(int argc, char **argv) {
     ioc.stop();
   };
 
-  ManagerConfig cfg{100, 500}; // 500 markets = 5 connections
+  ManagerConfig cfg{100, 500,
+                    std::chrono::minutes(5)}; // 500 markets = 5 connections
   Manager<Queue> manager{discovery, queue, ioc.get_executor(), ctx, cfg,
                          net_stats, fatal};
 
